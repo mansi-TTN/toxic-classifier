@@ -1,11 +1,17 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from toxic_classifier import ToxicClassifier
+import os
 
-def load_and_prepare_data(file_path):
+def load_and_prepare_data(file_path, sample_size=1000):
     # Load the toxic comments dataset
-    # Note: You'll need to download the dataset from Kaggle and provide the correct path
     df = pd.read_csv(file_path)
+    
+    # Take a smaller sample for faster training
+    # Ensure we have a good distribution of toxic and non-toxic comments
+    toxic_samples = df[df['toxic'] == 1].sample(min(sample_size//2, len(df[df['toxic'] == 1])))
+    non_toxic_samples = df[df['toxic'] == 0].sample(min(sample_size//2, len(df[df['toxic'] == 0])))
+    df_sample = pd.concat([toxic_samples, non_toxic_samples])
     
     # For this example, we'll use a simplified version with three toxicity levels
     def get_toxicity_level(row):
@@ -16,40 +22,52 @@ def load_and_prepare_data(file_path):
         else:
             return 'low'
     
-    df['toxicity_level'] = df.apply(get_toxicity_level, axis=1)
+    df_sample['toxicity_level'] = df_sample.apply(get_toxicity_level, axis=1)
     
-    return df['comment_text'].values, df['toxicity_level'].values
+    print(f"Using {len(df_sample)} samples for training")
+    print(f"Toxicity distribution:")
+    print(df_sample['toxicity_level'].value_counts())
+    
+    return df_sample['comment_text'].values, df_sample['toxicity_level'].values
 
 def main():
     # Initialize the classifier
     classifier = ToxicClassifier()
     
     try:
-        # Load and prepare the data
-        # Replace 'path_to_dataset.csv' with your actual dataset path
-        texts, labels = load_and_prepare_data('./train.csv')
-        
-        # Split the data
-        train_texts, val_texts, train_labels, val_labels = train_test_split(
-            texts, labels, test_size=0.2, random_state=42
-        )
-        
-        # Train the model
-        print("Training the model...")
-        classifier.train(
-            train_texts,
-            train_labels,
-            val_texts,
-            val_labels,
-            batch_size=16,
-            epochs=3
-        )
+        # Check if best model exists
+        best_model_path = os.path.join('checkpoints', 'best_model.pt')
+        if os.path.exists(best_model_path):
+            print("Loading existing best model...")
+            classifier.load_checkpoint(best_model_path)
+        else:
+            print("No existing model found. Starting training...")
+            # Load and prepare the data with smaller sample size
+            texts, labels = load_and_prepare_data('./train.csv', sample_size=1000)  # Using 1000 samples
+            
+            # Split the data
+            train_texts, val_texts, train_labels, val_labels = train_test_split(
+                texts, labels, test_size=0.2, random_state=42
+            )
+            
+            # Train the model with smaller batch size for faster training
+            print("Training the model...")
+            classifier.train(
+                train_texts,
+                train_labels,
+                val_texts,
+                val_labels,
+                batch_size=8,  # Reduced batch size
+                epochs=3
+            )
         
         # Example usage
         test_texts = [
             "You are an idiot and I hate you!",
             "I disagree with your opinion.",
             "This is a neutral comment.",
+            "You're so stupid, I can't believe you said that!",
+            "That's a terrible idea, you moron!",
         ]
         
         print("\nTesting the classifier with example texts:")
