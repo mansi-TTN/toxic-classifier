@@ -76,7 +76,7 @@ def main():
                 val_texts,
                 val_labels,
                 batch_size=16,  # Increased batch size for better stability
-                epochs=5,       # Increased epochs for better convergence
+                epochs=3,       # Reduced epochs for faster training
                 learning_rate=2e-5,
                 patience=3      # Early stopping patience
             )
