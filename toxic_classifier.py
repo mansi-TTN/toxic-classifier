@@ -61,31 +61,11 @@ class ToxicClassifier:
         nltk.download('punkt')
         nltk.download('stopwords')
         self.stop_words = set(stopwords.words('english'))
-
-        # Expanded toxic words dictionary
-        self.toxic_alternatives = {
-            'hate': ['dislike', 'disagree with', 'have different views from'],
-            'stupid': ['uninformed', 'mistaken', 'incorrect'],
-            'idiot': ['person', 'individual', 'someone'],
-            'dumb': ['unclear', 'confusing', 'difficult to understand'],
-            'kill': ['defeat', 'overcome', 'surpass'],
-            'moron': ['person', 'individual', 'someone'],
-            'retard': ['person', 'individual', 'someone'],
-            'fool': ['person', 'individual', 'someone'],
-            'worthless': ['needs improvement', 'could be better'],
-            'useless': ['needs work', 'requires attention'],
-            'pathetic': ['unfortunate', 'disappointing'],
-            'disgusting': ['unpleasant', 'not preferred'],
-            'horrible': ['not good', 'needs improvement'],
-            'terrible': ['poor', 'needs work'],
-            'awful': ['not satisfactory', 'needs attention'],
-            'crap': ['poor quality', 'needs improvement'],
-            'suck': ['not good', 'needs work'],
-            'loser': ['person', 'individual', 'someone'],
-            'failure': ['learning experience', 'opportunity for growth'],
-            'waste': ['needs improvement', 'could be better'],
-            'garbage': ['poor quality', 'needs work']
-        }
+        
+        # Initialize counterfactual generation model
+        self.counterfactual_model = None
+        self.toxic_patterns = {}
+        self.non_toxic_patterns = {}
 
     def save_checkpoint(self, epoch, optimizer, loss, is_best=False):
         checkpoint = {
@@ -141,28 +121,108 @@ class ToxicClassifier:
                 predicted_class = torch.argmax(predictions, dim=1)
 
             # Map prediction to toxicity level
+            # Index 0: low toxicity
+            # Index 1: moderate toxicity
+            # Index 2: high toxicity
             toxicity_levels = ['low', 'moderate', 'high']
-            return toxicity_levels[predicted_class.item()], predictions[0].tolist()
+            probabilities = predictions[0].tolist()
+            
+            # Get the predicted level
+            level = toxicity_levels[predicted_class.item()]
+            
+            # For debugging
+            print(f"Text: {text}")
+            print(f"Probabilities: {probabilities}")
+            print(f"Predicted class: {predicted_class.item()}")
+            print(f"Level: {level}")
+            
+            return level, probabilities
         except Exception as e:
             print(f"Error in classification: {str(e)}")
             return 'error', [0.33, 0.33, 0.33]
 
+    def learn_counterfactual_patterns(self, texts, labels):
+        """Learn patterns from the dataset for counterfactual generation"""
+        from collections import defaultdict
+        import re
+        
+        # Initialize pattern dictionaries
+        toxic_words = defaultdict(list)
+        non_toxic_words = defaultdict(list)
+        
+        # Process each text with progress bar
+        print("Learning patterns from dataset...")
+        for text, label in tqdm(zip(texts, labels), total=len(texts), desc="Learning patterns"):
+            # Tokenize and clean text
+            words = word_tokenize(text.lower())
+            words = [w for w in words if w.isalpha() and w not in self.stop_words]
+            
+            # Store patterns based on toxicity
+            if label == 'high' or label == 'moderate':
+                for i in range(len(words)-1):
+                    toxic_words[words[i]].append(words[i+1])
+            else:
+                for i in range(len(words)-1):
+                    non_toxic_words[words[i]].append(words[i+1])
+        
+        # Store learned patterns
+        self.toxic_patterns = dict(toxic_words)
+        self.non_toxic_patterns = dict(non_toxic_words)
+        
+        # Print statistics about learned patterns
+        print(f"Learned {len(self.toxic_patterns)} toxic patterns")
+        print(f"Learned {len(self.non_toxic_patterns)} non-toxic patterns")
+
     def generate_counterfactual(self, text):
+        """Generate counterfactual using learned patterns"""
         try:
             # Tokenize the text
             words = word_tokenize(text)
+            result = []
             
-            # Generate counterfactual by replacing toxic words
-            counterfactual = []
-            for word in words:
-                word_lower = word.lower()
-                if word_lower in self.toxic_alternatives:
-                    # Replace with random alternative
-                    counterfactual.append(np.random.choice(self.toxic_alternatives[word_lower]))
-                else:
-                    counterfactual.append(word)
-
-            return ' '.join(counterfactual)
+            for i in range(len(words)):
+                word = words[i].lower()
+                
+                # If word is in toxic patterns, try to replace with non-toxic pattern
+                if word in self.toxic_patterns:
+                    # Get the next word in the original text
+                    next_word = words[i+1].lower() if i+1 < len(words) else None
+                    
+                    # Find a non-toxic replacement that fits the context
+                    if word in self.non_toxic_patterns and next_word:
+                        # Get possible replacements
+                        replacements = self.non_toxic_patterns[word]
+                        if replacements:
+                            # Choose a replacement that maintains context
+                            replacement = np.random.choice(replacements)
+                            # Preserve original capitalization
+                            if words[i][0].isupper():
+                                replacement = replacement.capitalize()
+                            result.append(replacement)
+                            continue
+                
+                # If no replacement found, keep original word
+                result.append(words[i])
+            
+            # Join words back into text
+            counterfactual = ' '.join(result)
+            
+            # If no changes were made, try to find any toxic patterns
+            if counterfactual == text:
+                for i in range(len(words)-1):
+                    word = words[i].lower()
+                    next_word = words[i+1].lower()
+                    if word in self.toxic_patterns and next_word in self.toxic_patterns[word]:
+                        # Replace with a neutral pattern
+                        if word in self.non_toxic_patterns:
+                            replacement = np.random.choice(self.non_toxic_patterns[word])
+                            if words[i][0].isupper():
+                                replacement = replacement.capitalize()
+                            result[i] = replacement
+                            counterfactual = ' '.join(result)
+                            break
+            
+            return counterfactual
         except Exception as e:
             print(f"Error in counterfactual generation: {str(e)}")
             return text
