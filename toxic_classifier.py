@@ -14,6 +14,12 @@ import re
 import os
 from pathlib import Path
 import gc
+import lime
+from lime.lime_text import LimeTextExplainer
+import matplotlib.pyplot as plt
+import seaborn as sns
+import io
+import base64
 
 class ToxicDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_len=128):
@@ -57,15 +63,56 @@ class ToxicClassifier:
         self.checkpoint_dir = checkpoint_dir
         Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
         
+        # Initialize XAI framework
+        self.lime_explainer = LimeTextExplainer(class_names=['low', 'moderate', 'high'])
+        
         # Download required NLTK data
         nltk.download('punkt')
         nltk.download('stopwords')
+        nltk.download('averaged_perceptron_tagger')
         self.stop_words = set(stopwords.words('english'))
         
         # Initialize counterfactual generation model
         self.counterfactual_model = None
         self.toxic_patterns = {}
         self.non_toxic_patterns = {}
+        
+        # Semantic word mappings for context preservation
+        self.semantic_mappings = {
+            # Personal attacks
+            'idiot': 'person',
+            'stupid': 'incorrect',
+            'moron': 'individual',
+            'dumb': 'mistaken',
+            'fool': 'someone',
+            
+            # Strong negative emotions
+            'hate': 'disagree',
+            'loathe': 'dislike',
+            'despise': 'disapprove',
+            
+            # Insults
+            'jerk': 'person',
+            'asshole': 'individual',
+            'bastard': 'person',
+            
+            # Aggressive terms
+            'kill': 'stop',
+            'destroy': 'change',
+            'ruin': 'affect',
+            
+            # General negative terms
+            'terrible': 'different',
+            'awful': 'unusual',
+            'horrible': 'unexpected'
+        }
+        
+        # Word categories for better context matching
+        self.word_categories = {
+            'noun': ['person', 'individual', 'someone', 'one'],
+            'verb': ['disagree', 'dislike', 'disapprove', 'differ'],
+            'adjective': ['incorrect', 'mistaken', 'different', 'unusual']
+        }
 
     def save_checkpoint(self, epoch, optimizer, loss, is_best=False):
         checkpoint = {
@@ -159,11 +206,11 @@ class ToxicClassifier:
             
             # Store patterns based on toxicity
             if label == 'high' or label == 'moderate':
-                for i in range(len(words)-1):
-                    toxic_words[words[i]].append(words[i+1])
+                for word in words:
+                    toxic_words[word].extend(words)  # Store all words from toxic texts
             else:
-                for i in range(len(words)-1):
-                    non_toxic_words[words[i]].append(words[i+1])
+                for word in words:
+                    non_toxic_words[word].extend(words)  # Store all words from non-toxic texts
         
         # Store learned patterns
         self.toxic_patterns = dict(toxic_words)
@@ -173,54 +220,75 @@ class ToxicClassifier:
         print(f"Learned {len(self.toxic_patterns)} toxic patterns")
         print(f"Learned {len(self.non_toxic_patterns)} non-toxic patterns")
 
+    def get_word_category(self, word):
+        """Get the grammatical category of a word"""
+        pos = nltk.pos_tag([word])[0][1]
+        if pos.startswith('NN'):  # Noun
+            return 'noun'
+        elif pos.startswith('VB'):  # Verb
+            return 'verb'
+        elif pos.startswith('JJ'):  # Adjective
+            return 'adjective'
+        return None
+
     def generate_counterfactual(self, text):
-        """Generate counterfactual using learned patterns"""
+        """Generate counterfactual using learned patterns and semantic mappings"""
         try:
             # Tokenize the text
             words = word_tokenize(text)
+            pos_tags = nltk.pos_tag(words)
             result = []
             
-            for i in range(len(words)):
-                word = words[i].lower()
+            for i, (word, pos) in enumerate(pos_tags):
+                word_lower = word.lower()
                 
-                # If word is in toxic patterns, try to replace with non-toxic pattern
-                if word in self.toxic_patterns:
-                    # Get the next word in the original text
-                    next_word = words[i+1].lower() if i+1 < len(words) else None
+                # Check if word is in semantic mappings
+                if word_lower in self.semantic_mappings:
+                    # Get the category of the original word
+                    original_category = self.get_word_category(word_lower)
                     
-                    # Find a non-toxic replacement that fits the context
-                    if word in self.non_toxic_patterns and next_word:
-                        # Get possible replacements
-                        replacements = self.non_toxic_patterns[word]
+                    # Get the replacement word
+                    replacement = self.semantic_mappings[word_lower]
+                    
+                    # Ensure replacement matches the original word's category
+                    if original_category and original_category in self.word_categories:
+                        # Get all possible replacements for this category
+                        category_replacements = self.word_categories[original_category]
+                        if category_replacements:
+                            # Choose a replacement from the same category
+                            replacement = np.random.choice(category_replacements)
+                    
+                    # Preserve original capitalization
+                    if word[0].isupper():
+                        replacement = replacement.capitalize()
+                    
+                    result.append(replacement)
+                    continue
+                
+                # If word is in toxic patterns but not in semantic mappings
+                if word_lower in self.toxic_patterns:
+                    # Get the category of the original word
+                    original_category = self.get_word_category(word_lower)
+                    
+                    # Try to find a non-toxic replacement from the same category
+                    if original_category and original_category in self.word_categories:
+                        replacements = self.word_categories[original_category]
                         if replacements:
-                            # Choose a replacement that maintains context
                             replacement = np.random.choice(replacements)
-                            # Preserve original capitalization
-                            if words[i][0].isupper():
+                            if word[0].isupper():
                                 replacement = replacement.capitalize()
                             result.append(replacement)
                             continue
                 
                 # If no replacement found, keep original word
-                result.append(words[i])
+                result.append(word)
             
             # Join words back into text
             counterfactual = ' '.join(result)
             
-            # If no changes were made, try to find any toxic patterns
-            if counterfactual == text:
-                for i in range(len(words)-1):
-                    word = words[i].lower()
-                    next_word = words[i+1].lower()
-                    if word in self.toxic_patterns and next_word in self.toxic_patterns[word]:
-                        # Replace with a neutral pattern
-                        if word in self.non_toxic_patterns:
-                            replacement = np.random.choice(self.non_toxic_patterns[word])
-                            if words[i][0].isupper():
-                                replacement = replacement.capitalize()
-                            result[i] = replacement
-                            counterfactual = ' '.join(result)
-                            break
+            # Post-processing to fix common issues
+            counterfactual = re.sub(r'\s+([.,!?])', r'\1', counterfactual)  # Fix spacing around punctuation
+            counterfactual = re.sub(r'\s+', ' ', counterfactual)  # Fix multiple spaces
             
             return counterfactual
         except Exception as e:
@@ -361,3 +429,119 @@ class ToxicClassifier:
         except Exception as e:
             print(f"Error during training: {str(e)}")
             raise e 
+
+    def explain_prediction(self, text):
+        """Generate explanations using LIME"""
+        try:
+            # Get base prediction
+            toxicity_level, probabilities = self.classify_toxicity(text)
+            
+            # Generate LIME explanation
+            def predict_proba(texts):
+                results = []
+                for text in texts:
+                    _, probs = self.classify_toxicity(text)
+                    results.append(probs)
+                return np.array(results)
+            
+            lime_exp = self.lime_explainer.explain_instance(
+                text,
+                predict_proba,
+                num_features=10,
+                top_labels=1
+            )
+            
+            # Format explanations
+            explanations = {
+                'toxicity_level': toxicity_level,
+                'probabilities': probabilities,
+                'lime_explanation': {
+                    'important_features': lime_exp.as_list(),
+                    'local_prediction': lime_exp.local_pred,
+                    'explanation_text': lime_exp.as_html()
+                }
+            }
+            
+            return explanations
+            
+        except Exception as e:
+            print(f"Error in explanation generation: {str(e)}")
+            return None
+
+    def visualize_explanation(self, text):
+        """Generate visualization of explanations"""
+        try:
+            explanations = self.explain_prediction(text)
+            if not explanations:
+                return None
+            
+            # Create visualization
+            fig = plt.figure(figsize=(15, 10))
+            
+            try:
+                # Plot 1: LIME Feature Importance
+                plt.subplot(2, 1, 1)
+                lime_features = explanations['lime_explanation']['important_features']
+                features = [f[0] for f in lime_features]
+                importance = [f[1] for f in lime_features]
+                sns.barplot(x=importance, y=features)
+                plt.title('Feature Importance (LIME)')
+                
+                # Plot 2: Probability Distribution
+                plt.subplot(2, 1, 2)
+                probs = explanations['probabilities']
+                labels = ['low', 'moderate', 'high']
+                sns.barplot(x=labels, y=probs)
+                plt.title('Toxicity Probability Distribution')
+                
+                plt.tight_layout()
+                
+                # Save plot to bytes
+                buf = io.BytesIO()
+                plt.savefig(buf, format='png')
+                buf.seek(0)
+                plot_data = base64.b64encode(buf.getvalue()).decode('utf-8')
+                
+                return plot_data
+                
+            finally:
+                plt.close(fig)
+            
+        except Exception as e:
+            print(f"Error in visualization: {str(e)}")
+            return None
+
+    def generate_counterfactual_with_explanation(self, text):
+        """Generate counterfactual with explanation of changes"""
+        try:
+            # Generate counterfactual
+            counterfactual = self.generate_counterfactual(text)
+            
+            # Get explanations for both original and counterfactual
+            original_exp = self.explain_prediction(text)
+            counterfactual_exp = self.explain_prediction(counterfactual)
+            
+            # Compare changes
+            changes = []
+            original_words = word_tokenize(text.lower())
+            counterfactual_words = word_tokenize(counterfactual.lower())
+            
+            for orig_word, cf_word in zip(original_words, counterfactual_words):
+                if orig_word != cf_word:
+                    changes.append({
+                        'original': orig_word,
+                        'replacement': cf_word,
+                        'reason': 'Toxic word replaced with non-toxic alternative'
+                    })
+            
+            return {
+                'original_text': text,
+                'counterfactual': counterfactual,
+                'changes': changes,
+                'original_explanation': original_exp,
+                'counterfactual_explanation': counterfactual_exp
+            }
+            
+        except Exception as e:
+            print(f"Error in counterfactual explanation: {str(e)}")
+            return None 

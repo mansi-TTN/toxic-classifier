@@ -3,8 +3,11 @@ from sklearn.model_selection import train_test_split
 from toxic_classifier import ToxicClassifier
 import os
 import numpy as np
+from datetime import datetime
+import json
 
-def load_and_prepare_data(file_path, sample_size=2000):
+def load_and_prepare_data(file_path, sample_size=1000):
+    """Load and prepare data with improved sampling and validation"""
     # Load the toxic comments dataset
     df = pd.read_csv(file_path)
     
@@ -44,6 +47,15 @@ def load_and_prepare_data(file_path, sample_size=2000):
     
     return df_sample['comment_text'].values, df_sample['toxicity_level'].values
 
+def save_training_metrics(metrics, model_dir='checkpoints'):
+    """Save training metrics to a JSON file"""
+    os.makedirs(model_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    metrics_file = os.path.join(model_dir, f'training_metrics_{timestamp}.json')
+    
+    with open(metrics_file, 'w') as f:
+        json.dump(metrics, f, indent=4)
+
 def main():
     # Initialize the classifier
     classifier = ToxicClassifier()
@@ -57,7 +69,7 @@ def main():
         else:
             print("No existing model found. Starting training...")
             # Load and prepare the data with balanced sample
-            texts, labels = load_and_prepare_data('./train.csv', sample_size=2000)
+            texts, labels = load_and_prepare_data('./train.csv', sample_size=1000)
             
             # Split the data with stratification
             train_texts, val_texts, train_labels, val_labels = train_test_split(
@@ -68,18 +80,21 @@ def main():
             print("Learning counterfactual patterns...")
             classifier.learn_counterfactual_patterns(train_texts, train_labels)
             
-            # Train the model with optimized parameters
+            # Train the model with optimized parameters for speed
             print("Training the model...")
-            classifier.train(
+            training_metrics = classifier.train(
                 train_texts,
                 train_labels,
                 val_texts,
                 val_labels,
-                batch_size=16,  # Increased batch size for better stability
-                epochs=3,       # Reduced epochs for faster training
-                learning_rate=2e-5,
-                patience=3      # Early stopping patience
+                batch_size=64,
+                epochs=3,
+                learning_rate=3e-5,
+                patience=2
             )
+            
+            # Save training metrics
+            save_training_metrics(training_metrics)
         
         # Test with diverse examples
         test_texts = [
@@ -96,6 +111,7 @@ def main():
         ]
         
         print("\nTesting the classifier with example texts:")
+        test_results = []
         for text in test_texts:
             toxicity_level, probabilities = classifier.classify_toxicity(text)
             print(f"\nText: {text}")
@@ -109,6 +125,17 @@ def main():
             # Classify the counterfactual
             counter_level, counter_probs = classifier.classify_toxicity(counterfactual)
             print(f"Counterfactual toxicity level: {counter_level}")
+            
+            test_results.append({
+                'text': text,
+                'toxicity_level': toxicity_level,
+                'probabilities': probabilities,
+                'counterfactual': counterfactual,
+                'counterfactual_toxicity': counter_level
+            })
+        
+        # Save test results
+        save_training_metrics({'test_results': test_results}, 'test_results')
     
     except Exception as e:
         print(f"An error occurred: {str(e)}")

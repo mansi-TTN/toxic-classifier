@@ -1,81 +1,135 @@
 from flask import Flask, request, jsonify
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from toxic_classifier import ToxicClassifier
 import os
+import json
+from werkzeug.utils import secure_filename
+import matplotlib.pyplot as plt
+import io
+import base64
+import pandas as pd
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
-
-# Initialize the classifier
 classifier = ToxicClassifier()
 
-# Check if model exists, if not train it
-best_model_path = os.path.join('checkpoints', 'best_model.pt')
-if not os.path.exists(best_model_path):
-    print("No existing model found. Please train the model first using main.py")
-    exit(1)
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
+)
 
-# Load the best model
-classifier.load_checkpoint(best_model_path)
+# Configuration
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
+app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+ALLOWED_EXTENSIONS = {'csv'}
 
-@app.route('/classify', methods=['POST'])
-def classify_text():
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({'error': 'File too large'}), 413
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({'error': 'Rate limit exceeded'}), 429
+
+@app.route('/analyze', methods=['POST'])
+@limiter.limit("10 per minute")
+def analyze_text():
     try:
-        data = request.get_json()
-        if 'text' not in data:
-            return jsonify({'error': 'No text provided'}), 400
-        
-        text = data['text']
+        # Handle both JSON and file uploads
+        if request.files:
+            file = request.files['file']
+            if file.filename == '':
+                return jsonify({'error': 'No file selected'}), 400
+            
+            if not allowed_file(file.filename):
+                return jsonify({'error': 'Only CSV files are supported'}), 400
+            
+            # Save the file temporarily
+            filename = secure_filename(file.filename)
+            filepath = os.path.join('uploads', filename)
+            os.makedirs('uploads', exist_ok=True)
+            file.save(filepath)
+            
+            try:
+                # Process the file
+                results = []
+                df = pd.read_csv(filepath)
+                
+                # Validate CSV structure
+                if 'text' not in df.columns:
+                    return jsonify({'error': 'CSV must contain a "text" column'}), 400
+                
+                for text in df['text']:
+                    if not isinstance(text, str) or not text.strip():
+                        continue
+                    result = process_single_text(text)
+                    results.append(result)
+                
+                return jsonify({'results': results})
+                
+            finally:
+                # Clean up
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                    
+        else:
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+                
+            text = data.get('text')
+            if not text or not isinstance(text, str) or not text.strip():
+                return jsonify({'error': 'Invalid text provided'}), 400
+            
+            result = process_single_text(text)
+            return jsonify(result)
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def process_single_text(text):
+    """Process a single text and return comprehensive analysis"""
+    try:
+        # Get toxicity classification
         toxicity_level, probabilities = classifier.classify_toxicity(text)
         
-        return jsonify({
+        # Generate explanations
+        explanations = classifier.explain_prediction(text)
+        
+        # Generate visualization
+        plot_data = classifier.visualize_explanation(text)
+        
+        # Generate counterfactual if text is toxic
+        counterfactual_result = None
+        if toxicity_level in ['moderate', 'high']:
+            counterfactual_result = classifier.generate_counterfactual_with_explanation(text)
+        
+        # Compile comprehensive response
+        result = {
             'text': text,
-            'toxicity_level': toxicity_level,
-            'probabilities': probabilities
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/generate_counterfactual', methods=['POST'])
-def generate_counterfactual():
-    try:
-        data = request.get_json()
-        if 'text' not in data:
-            return jsonify({'error': 'No text provided'}), 400
-        
-        text = data['text']
-        counterfactual = classifier.generate_counterfactual(text)
-        counter_level, counter_probs = classifier.classify_toxicity(counterfactual)
-        
-        return jsonify({
-            'original_text': text,
-            'counterfactual': counterfactual,
-            'counterfactual_toxicity_level': counter_level,
-            'counterfactual_probabilities': counter_probs
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/batch_classify', methods=['POST'])
-def batch_classify():
-    try:
-        data = request.get_json()
-        if 'texts' not in data or not isinstance(data['texts'], list):
-            return jsonify({'error': 'No texts array provided'}), 400
-        
-        results = []
-        for text in data['texts']:
-            toxicity_level, probabilities = classifier.classify_toxicity(text)
-            results.append({
-                'text': text,
-                'toxicity_level': toxicity_level,
+            'toxicity_analysis': {
+                'level': toxicity_level,
                 'probabilities': probabilities
-            })
+            },
+            'explanations': explanations,
+            'visualization': plot_data,
+            'counterfactual': counterfactual_result
+        }
         
-        return jsonify({'results': results})
-    
+        return result
+        
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"Error processing text: {str(e)}")
+        return None
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000) 
