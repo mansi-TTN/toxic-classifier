@@ -77,41 +77,219 @@ class ToxicClassifier:
         self.toxic_patterns = {}
         self.non_toxic_patterns = {}
         
-        # Semantic word mappings for context preservation
+        # Enhanced semantic mappings with context awareness
         self.semantic_mappings = {
-            # Personal attacks
+            # Emotional states and anger
+            'mad': 'upset',
+            'angry': 'upset',
+            'furious': 'upset',
+            'enraged': 'upset',
+            'irate': 'upset',
+            'livid': 'upset',
+            'outraged': 'upset',
+            'fuming': 'upset',
+            'seething': 'upset',
+            'raging': 'upset',
+            'pissed': 'upset',
+            'pissed off': 'upset',
+            'infuriated': 'upset',
+            'incensed': 'upset',
+            'wrathful': 'upset',
+            'indignant': 'upset',
+            'resentful': 'upset',
+            'bitter': 'upset',
+            'hostile': 'upset',
+            'aggressive': 'assertive',
+            
+            # Personal attacks and insults
             'idiot': 'person',
             'stupid': 'incorrect',
             'moron': 'individual',
             'dumb': 'mistaken',
             'fool': 'someone',
-            
-            # Strong negative emotions
-            'hate': 'disagree',
-            'loathe': 'dislike',
-            'despise': 'disapprove',
-            
-            # Insults
             'jerk': 'person',
             'asshole': 'individual',
+            'retard': 'person',
+            'imbecile': 'person',
+            'dunce': 'person',
+            'nincompoop': 'person',
+            'blockhead': 'person',
+            'bonehead': 'person',
+            'dullard': 'person',
+            'simpleton': 'person',
+            'halfwit': 'person',
+            'dimwit': 'person',
+            'nitwit': 'person',
+            'numbskull': 'person',
+            'dumbass': 'person',
+            'dumbfuck': 'person',
+            'dumbhead': 'person',
+            'dumbnut': 'person',
+            'dumbshit': 'person',
+            'dumbstruck': 'person',
+            'dumbfound': 'person',
+            'dumbfounder': 'person',
+            'dumbfoundest': 'person',
+            
+            # Profanity and offensive words
+            'fuck': 'forget',
+            'fucking': 'very',
+            'fucked': 'messed up',
+            'shit': 'stuff',
+            'damn': 'darn',
+            'hell': 'heck',
+            'ass': 'person',
+            'butt': 'person',
+            'crap': 'stuff',
+            'piss': 'upset',
+            'bitch': 'person',
+            'dick': 'person',
+            'cock': 'person',
+            'pussy': 'person',
             'bastard': 'person',
-            
-            # Aggressive terms
-            'kill': 'stop',
-            'destroy': 'change',
-            'ruin': 'affect',
-            
-            # General negative terms
-            'terrible': 'different',
-            'awful': 'unusual',
-            'horrible': 'unexpected'
+            'motherfucker': 'person',
+            'screw': 'forget',
+            'screwed': 'messed up',
+            'bullshit': 'nonsense',
+            'damnit': 'darn',
+            'goddamn': 'darn',
+            'bloody': 'very',
+            'bugger': 'person',
+            'sod': 'person',
+            'twat': 'person',
+            'wanker': 'person',
+            'arse': 'person',
+            'arsehole': 'person',
+            'bellend': 'person',
+            'knob': 'person',
+            'knobhead': 'person',
+            'prick': 'person',
+            'tosser': 'person',
+            'dipshit': 'person',
+            'jackass': 'person',
+            'shithead': 'person',
+            'shitface': 'person',
+            'shitbag': 'person',
+            'shitstain': 'person',
+            'fuckface': 'person',
+            'fuckhead': 'person',
+            'fuckwit': 'person',
+            'fucknut': 'person',
+            'fucktard': 'person',
+            'fuckup': 'person',
+            'fuckwad': 'person',
+            'fuckstick': 'person',
+            'fuckbucket': 'person',
+            'fucknugget': 'person',
+            'fuckbrain': 'person',
+            'fuckhole': 'person',
+            'fuckbag': 'person',
+            'fucktoy': 'person',
+            'fuckboy': 'person',
+            'fuckgirl': 'person'
         }
         
-        # Word categories for better context matching
-        self.word_categories = {
-            'noun': ['person', 'individual', 'someone', 'one'],
-            'verb': ['disagree', 'dislike', 'disapprove', 'differ'],
-            'adjective': ['incorrect', 'mistaken', 'different', 'unusual']
+        # Phrase-level mappings with more meaningful replacements
+        self.phrase_mappings = {
+            # Personal attacks with constructive alternatives
+            'you are mad': 'you seem upset',
+            'you are angry': 'you seem upset',
+            'you are an idiot': 'you have a different perspective',
+            'what an idiot': 'what a different viewpoint',
+            'complete idiot': 'person with a different approach',
+            'total idiot': 'person with a different perspective',
+            'you are stupid': 'you have a different understanding',
+            'you are dumb': 'you have a different viewpoint',
+            'you are a fool': 'you have a different way of thinking',
+            'you are a jerk': 'you have a different approach',
+            'you are an asshole': 'you have a different perspective',
+            'you are a retard': 'you have a different way of thinking',
+            'you are a moron': 'you have a different viewpoint',
+            'you are a dumbass': 'you have a different understanding',
+            
+            # Profanity phrases with constructive alternatives
+            'fuck you': 'I disagree with your perspective',
+            'fuck off': 'please give me some space',
+            'fuck this': 'this situation is challenging',
+            'fuck that': 'that approach is not ideal',
+            'fuck everything': 'this situation is difficult',
+            'fuck the world': 'the world is challenging',
+            'fuck life': 'life is difficult',
+            'fuck me': 'this is frustrating',
+            'fuck him': 'he has a different perspective',
+            'fuck her': 'she has a different viewpoint',
+            'fuck them': 'they have a different approach',
+            'fuck it': 'this is not ideal',
+            'fuck no': 'I strongly disagree',
+            'fuck yes': 'I strongly agree',
+            'fuck yeah': 'I strongly agree',
+            
+            # Common toxic phrases with constructive alternatives
+            'go to hell': 'please reconsider your position',
+            'go fuck yourself': 'please take some time to reflect',
+            'you are a fucking idiot': 'you have a different perspective',
+            'you are a fucking moron': 'you have a different viewpoint',
+            'you are a fucking retard': 'you have a different way of thinking',
+            'you are a fucking dumbass': 'you have a different understanding',
+            'you are a fucking asshole': 'you have a different approach',
+            'you are a fucking jerk': 'you have a different perspective',
+            'you are a fucking fool': 'you have a different way of thinking',
+            
+            # Question phrases with constructive alternatives
+            'what the fuck': 'what is happening',
+            'what the hell': 'what is going on',
+            'what the shit': 'what is this about',
+            'what the crap': 'what is this about',
+            'what the damn': 'what is this about',
+            'what the bloody': 'what is this about'
+        }
+        
+        # Context-aware replacements with more nuanced handling
+        self.context_replacements = {
+            'mad': {
+                'after': ['person', 'people', 'individual', 'you', 'they', 'he', 'she'],
+                'replacement': 'upset'
+            },
+            'idiot': {
+                'after': ['you', 'what', 'complete', 'total', 'absolute', 'utter', 'fucking'],
+                'replacement': 'person with a different perspective'
+            },
+            'stupid': {
+                'after': ['you', 'what', 'complete', 'total', 'absolute', 'utter', 'fucking'],
+                'replacement': 'incorrect'
+            },
+            'dumb': {
+                'after': ['you', 'what', 'complete', 'total', 'absolute', 'utter', 'fucking'],
+                'replacement': 'mistaken'
+            },
+            'fool': {
+                'after': ['you', 'what', 'complete', 'total', 'absolute', 'utter', 'fucking'],
+                'replacement': 'someone with a different view'
+            },
+            'jerk': {
+                'after': ['you', 'what', 'complete', 'total', 'absolute', 'utter', 'fucking'],
+                'replacement': 'person with a different approach'
+            },
+            'asshole': {
+                'after': ['you', 'what', 'complete', 'total', 'absolute', 'utter', 'fucking'],
+                'replacement': 'individual with a different perspective'
+            },
+            'retard': {
+                'after': ['you', 'what', 'complete', 'total', 'absolute', 'utter', 'fucking'],
+                'replacement': 'person with a different way of thinking'
+            },
+            'moron': {
+                'after': ['you', 'what', 'complete', 'total', 'absolute', 'utter', 'fucking'],
+                'replacement': 'individual with a different viewpoint'
+            },
+            'dumbass': {
+                'after': ['you', 'what', 'complete', 'total', 'absolute', 'utter', 'fucking'],
+                'replacement': 'person with a different understanding'
+            },
+            'fuck': {
+                'after': ['you', 'off', 'this', 'that', 'everything', 'world', 'life', 'me', 'him', 'her', 'them', 'it', 'all', 'no', 'yes', 'yeah', 'right', 'wrong', 'up', 'down', 'left', 'right', 'center', 'middle', 'top', 'bottom', 'front', 'back', 'side', 'edge', 'corner', 'end', 'start', 'beginning', 'finish', 'done', 'over', 'under', 'through', 'around', 'about', 'with', 'without', 'within', 'beyond', 'between', 'among', 'amongst', 'against', 'for', 'to', 'from', 'by', 'at', 'in', 'on', 'off', 'out'],
+                'replacement': 'move'
+            }
         }
 
     def save_checkpoint(self, epoch, optimizer, loss, is_best=False):
@@ -236,114 +414,63 @@ class ToxicClassifier:
         return None
 
     def generate_counterfactual(self, text):
-        """Generate counterfactual text"""
+        """Generate counterfactual text with improved context awareness"""
         try:
-            # Enhanced semantic mappings for better replacements
-            semantic_mappings = {
-                # Profanities and offensive words
-                'fuck': 'forget', 'fucking': 'very', 'fucked': 'messed up',
-                'shit': 'stuff', 'damn': 'darn', 'hell': 'heck',
-                'ass': 'person', 'butt': 'person', 'crap': 'stuff',
-                'piss': 'upset', 'pissed': 'upset', 'bitch': 'person',
-                'dick': 'person', 'cock': 'person', 'pussy': 'person',
-                'bastard': 'person', 'motherfucker': 'person',
-                'screw': 'forget', 'screwed': 'messed up',
-                'bullshit': 'nonsense', 'crap': 'stuff', 'darn': 'darn',
-                'damnit': 'darn', 'goddamn': 'darn', 'bloody': 'very',
-                'bugger': 'person', 'sod': 'person', 'twat': 'person',
-                'wanker': 'person', 'arse': 'person', 'arsehole': 'person',
-                'bellend': 'person', 'knob': 'person', 'knobhead': 'person',
-                'prick': 'person', 'tosser': 'person', 'dipshit': 'person',
-                'dumbass': 'person', 'jackass': 'person', 'shithead': 'person',
-                'shitface': 'person', 'shitbag': 'person', 'shitstain': 'person',
-                'fuckface': 'person', 'fuckhead': 'person', 'fuckwit': 'person',
-                'fucknut': 'person', 'fucktard': 'person', 'fuckup': 'person',
-                'fuckwad': 'person', 'fuckstick': 'person', 'fuckbucket': 'person',
-                'fucknugget': 'person', 'fuckbrain': 'person', 'fuckhole': 'person',
-                'fuckbag': 'person', 'fucktoy': 'person', 'fuckboy': 'person',
-                'fuckgirl': 'person', 'fucktard': 'person', 'fuckup': 'person',
-                'fuckwad': 'person', 'fuckstick': 'person', 'fuckbucket': 'person',
-                'fucknugget': 'person', 'fuckbrain': 'person', 'fuckhole': 'person',
-                'fuckbag': 'person', 'fucktoy': 'person', 'fuckboy': 'person',
-                'fuckgirl': 'person',
-                
-                # Personal attacks
-                'idiot': 'person', 'stupid': 'incorrect', 'moron': 'individual',
-                'dumb': 'mistaken', 'fool': 'someone', 'jerk': 'person',
-                'asshole': 'individual', 'retard': 'person', 'cunt': 'person',
-                'imbecile': 'person', 'dunce': 'person', 'nincompoop': 'person',
-                'blockhead': 'person', 'bonehead': 'person', 'dullard': 'person',
-                'simpleton': 'person', 'halfwit': 'person', 'dimwit': 'person',
-                'nitwit': 'person', 'numbskull': 'person', 'dumbass': 'person',
-                'dumbfuck': 'person', 'dumbhead': 'person', 'dumbnut': 'person',
-                'dumbshit': 'person', 'dumbstruck': 'person', 'dumbwaiter': 'person',
-                'dumbfound': 'person', 'dumbfounder': 'person', 'dumbfoundest': 'person',
-                
-                # Strong negative emotions
-                'hate': 'dislike', 'loathe': 'disapprove', 'despise': 'disagree',
-                'abhor': 'disapprove', 'detest': 'dislike', 'abominate': 'dislike',
-                'execrate': 'dislike', 'revile': 'dislike', 'vilify': 'dislike',
-                'denounce': 'disapprove', 'condemn': 'disapprove', 'censure': 'disapprove',
-                'reproach': 'disapprove', 'rebuke': 'disapprove', 'reprimand': 'disapprove',
-                'reprove': 'disapprove', 'upbraid': 'disapprove', 'berate': 'disapprove',
-                'castigate': 'disapprove', 'chastise': 'disapprove', 'scold': 'disapprove',
-                
-                # Aggressive terms
-                'kill': 'stop', 'destroy': 'change', 'ruin': 'affect',
-                'murder': 'stop', 'attack': 'address', 'assault': 'confront',
-                'annihilate': 'stop', 'eliminate': 'remove', 'eradicate': 'remove',
-                'exterminate': 'remove', 'extinguish': 'stop', 'obliterate': 'remove',
-                'slay': 'stop', 'slaughter': 'stop', 'massacre': 'stop',
-                'butcher': 'stop', 'execute': 'stop', 'dispatch': 'stop',
-                
-                # Insults and slurs
-                'nigger': 'person', 'nigga': 'person', 'fag': 'person',
-                'faggot': 'person', 'whore': 'person', 'slut': 'person',
-                'spic': 'person', 'kike': 'person', 'chink': 'person',
-                'gook': 'person', 'wetback': 'person', 'beaner': 'person',
-                'towelhead': 'person', 'sandnigger': 'person', 'cameljockey': 'person',
-                'raghead': 'person', 'taco': 'person', 'cholo': 'person',
-                'spook': 'person', 'coon': 'person', 'jigaboo': 'person',
-                'junglebunny': 'person', 'porchmonkey': 'person', 'spearchucker': 'person',
-                'zipperhead': 'person', 'gook': 'person', 'slant': 'person',
-                'yellow': 'person', 'chink': 'person', 'gook': 'person',
-                
-                # General negative terms
-                'terrible': 'different', 'awful': 'unusual', 'horrible': 'unexpected',
-                'disgusting': 'unpleasant', 'vile': 'unpleasant', 'nasty': 'unpleasant',
-                'revolting': 'unpleasant', 'repulsive': 'unpleasant', 'repugnant': 'unpleasant',
-                'abhorrent': 'unpleasant', 'detestable': 'unpleasant', 'loathsome': 'unpleasant',
-                'odious': 'unpleasant', 'offensive': 'unpleasant', 'obnoxious': 'unpleasant',
-                'noxious': 'unpleasant', 'putrid': 'unpleasant', 'rancid': 'unpleasant',
-                'rotten': 'unpleasant', 'stinking': 'unpleasant', 'tainted': 'unpleasant'
-            }
+            # First check for exact phrase matches
+            for phrase, replacement in self.phrase_mappings.items():
+                if phrase in text.lower():
+                    return {
+                        'text': text.lower().replace(phrase, replacement),
+                        'changes': [f"{phrase} -> {replacement}"]
+                    }
             
             # Tokenize the text while preserving punctuation
             words = text.split()
             result = []
             changes = []
             
-            for word in words:
+            for i, word in enumerate(words):
+                # Remove punctuation for comparison but store it
+                punctuation = ''
+                if word[-1] in '!,.?':
+                    punctuation = word[-1]
+                    word = word[:-1]
+                
                 # Convert to lowercase for comparison but preserve original case
                 word_lower = word.lower()
                 
-                # Check if word is in semantic mappings
-                if word_lower in semantic_mappings:
-                    replacement = semantic_mappings[word_lower]
+                # Check context-aware replacements
+                replacement = None
+                if word_lower in self.context_replacements:
+                    context = self.context_replacements[word_lower]
+                    # Check if next word matches context
+                    if i < len(words) - 1:
+                        next_word = words[i + 1].lower().strip('!,.?')
+                        if next_word in context['after']:
+                            replacement = context['replacement']
+                
+                # If no context match, check regular mappings
+                if not replacement and word_lower in self.semantic_mappings:
+                    replacement = self.semantic_mappings[word_lower]
+                
+                if replacement:
                     # Preserve original capitalization
                     if word[0].isupper():
                         replacement = replacement.capitalize()
+                    # Add back punctuation
+                    replacement += punctuation
                     result.append(replacement)
-                    changes.append(f"{word} -> {replacement}")
+                    changes.append(f"{word}{punctuation} -> {replacement}")
                 else:
-                    result.append(word)
+                    # Add back punctuation to original word
+                    result.append(word + punctuation)
             
             # Join words back into text
             counterfactual = ' '.join(result)
             
-            # Post-processing to fix common issues
-            counterfactual = re.sub(r'\s+([.,!?])', r'\1', counterfactual)  # Fix spacing around punctuation
-            counterfactual = re.sub(r'\s+', ' ', counterfactual)  # Fix multiple spaces
+            # Post-processing
+            counterfactual = re.sub(r'\s+([.,!?])', r'\1', counterfactual)
+            counterfactual = re.sub(r'\s+', ' ', counterfactual)
             
             return {
                 'text': counterfactual,
@@ -352,10 +479,30 @@ class ToxicClassifier:
             
         except Exception as e:
             print(f"Error in counterfactual generation: {str(e)}")
-            return {
-                'text': text,
-                'changes': []
-            }
+            # Fallback to simple word replacement
+            try:
+                words = text.split()
+                result = []
+                changes = []
+                for word in words:
+                    word_lower = word.lower().strip('!,.?')
+                    if word_lower in self.semantic_mappings:
+                        replacement = self.semantic_mappings[word_lower]
+                        if word[0].isupper():
+                            replacement = replacement.capitalize()
+                        result.append(replacement)
+                        changes.append(f"{word} -> {replacement}")
+                    else:
+                        result.append(word)
+                return {
+                    'text': ' '.join(result),
+                    'changes': changes
+                }
+            except:
+                return {
+                    'text': text,
+                    'changes': []
+                }
 
     def train(self, train_texts, train_labels, val_texts=None, val_labels=None,
               batch_size=16, epochs=3, learning_rate=2e-5, patience=3):
@@ -619,31 +766,38 @@ class ToxicClassifier:
             return None
 
     def analyze_text(self, text):
-        """Analyze text and generate counterfactual if toxic"""
+        """Analyze text and generate counterfactual with explanation"""
         try:
             # Classify toxicity
             toxicity_level, probabilities = self.classify_toxicity(text)
             
-            # Generate counterfactual if toxic
-            counterfactual_result = None
-            if toxicity_level in ['moderate', 'high']:
-                counterfactual_result = self.generate_counterfactual(text)
+            # Generate counterfactual
+            counterfactual_result = self.generate_counterfactual(text)
             
-            # Prepare response
-            result = {
+            # Classify counterfactual toxicity
+            counterfactual_level, counterfactual_probs = self.classify_toxicity(counterfactual_result['text'])
+            
+            return {
                 'text': text,
+                'counterfact': counterfactual_result['text'],
+                'counterfactual': {
+                    'changes': counterfactual_result['changes'],
+                    'text': counterfactual_result['text']
+                },
                 'toxicity_analysis': {
                     'level': toxicity_level,
                     'probabilities': probabilities
-                },
-                'counterfactual': counterfactual_result,
-                'counterfact': counterfactual_result['text'] if counterfactual_result else None
+                }
             }
-            
-            return result
             
         except Exception as e:
             print(f"Error in text analysis: {str(e)}")
             return {
-                'error': str(e)
+                'text': text,
+                'counterfact': None,
+                'counterfactual': None,
+                'toxicity_analysis': {
+                    'level': 'error',
+                    'probabilities': [0.33, 0.33, 0.33]
+                }
             } 
