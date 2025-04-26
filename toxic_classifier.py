@@ -132,18 +132,32 @@ class ToxicClassifier:
         return checkpoint['optimizer_state_dict']
 
     def preprocess_text(self, text):
-        # Convert to lowercase
-        text = text.lower()
-        # Remove special characters and numbers
-        text = re.sub(r'[^a-zA-Z\s]', '', text)
-        # Remove extra whitespace
-        text = ' '.join(text.split())
-        return text
+        """Preprocess text for classification"""
+        try:
+            # Convert to lowercase
+            text = text.lower()
+            # Remove special characters and numbers
+            text = re.sub(r'[^a-zA-Z\s]', '', text)
+            # Remove extra whitespace
+            text = ' '.join(text.split())
+            return text
+        except Exception as e:
+            print(f"Error in text preprocessing: {str(e)}")
+            return ""
 
     def classify_toxicity(self, text):
+        """Classify text toxicity"""
         try:
+            # Validate input
+            if not text or not isinstance(text, str) or len(text.strip()) < 3:
+                return 'error', [0.33, 0.33, 0.33]
+            
             # Preprocess the text
             text = self.preprocess_text(text)
+            
+            # Skip if text is too short after preprocessing
+            if len(text.strip()) < 3:
+                return 'error', [0.33, 0.33, 0.33]
             
             # Tokenize and prepare input
             encoding = self.tokenizer.encode_plus(
@@ -168,22 +182,12 @@ class ToxicClassifier:
                 predicted_class = torch.argmax(predictions, dim=1)
 
             # Map prediction to toxicity level
-            # Index 0: low toxicity
-            # Index 1: moderate toxicity
-            # Index 2: high toxicity
             toxicity_levels = ['low', 'moderate', 'high']
-            probabilities = predictions[0].tolist()
-            
-            # Get the predicted level
+            probabilities = [float(p) for p in predictions[0].tolist()]
             level = toxicity_levels[predicted_class.item()]
             
-            # For debugging
-            print(f"Text: {text}")
-            print(f"Probabilities: {probabilities}")
-            print(f"Predicted class: {predicted_class.item()}")
-            print(f"Level: {level}")
-            
             return level, probabilities
+            
         except Exception as e:
             print(f"Error in classification: {str(e)}")
             return 'error', [0.33, 0.33, 0.33]
@@ -232,56 +236,107 @@ class ToxicClassifier:
         return None
 
     def generate_counterfactual(self, text):
-        """Generate counterfactual using learned patterns and semantic mappings"""
+        """Generate counterfactual text"""
         try:
-            # Tokenize the text
-            words = word_tokenize(text)
-            pos_tags = nltk.pos_tag(words)
-            result = []
+            # Enhanced semantic mappings for better replacements
+            semantic_mappings = {
+                # Profanities and offensive words
+                'fuck': 'forget', 'fucking': 'very', 'fucked': 'messed up',
+                'shit': 'stuff', 'damn': 'darn', 'hell': 'heck',
+                'ass': 'person', 'butt': 'person', 'crap': 'stuff',
+                'piss': 'upset', 'pissed': 'upset', 'bitch': 'person',
+                'dick': 'person', 'cock': 'person', 'pussy': 'person',
+                'bastard': 'person', 'motherfucker': 'person',
+                'screw': 'forget', 'screwed': 'messed up',
+                'bullshit': 'nonsense', 'crap': 'stuff', 'darn': 'darn',
+                'damnit': 'darn', 'goddamn': 'darn', 'bloody': 'very',
+                'bugger': 'person', 'sod': 'person', 'twat': 'person',
+                'wanker': 'person', 'arse': 'person', 'arsehole': 'person',
+                'bellend': 'person', 'knob': 'person', 'knobhead': 'person',
+                'prick': 'person', 'tosser': 'person', 'dipshit': 'person',
+                'dumbass': 'person', 'jackass': 'person', 'shithead': 'person',
+                'shitface': 'person', 'shitbag': 'person', 'shitstain': 'person',
+                'fuckface': 'person', 'fuckhead': 'person', 'fuckwit': 'person',
+                'fucknut': 'person', 'fucktard': 'person', 'fuckup': 'person',
+                'fuckwad': 'person', 'fuckstick': 'person', 'fuckbucket': 'person',
+                'fucknugget': 'person', 'fuckbrain': 'person', 'fuckhole': 'person',
+                'fuckbag': 'person', 'fucktoy': 'person', 'fuckboy': 'person',
+                'fuckgirl': 'person', 'fucktard': 'person', 'fuckup': 'person',
+                'fuckwad': 'person', 'fuckstick': 'person', 'fuckbucket': 'person',
+                'fucknugget': 'person', 'fuckbrain': 'person', 'fuckhole': 'person',
+                'fuckbag': 'person', 'fucktoy': 'person', 'fuckboy': 'person',
+                'fuckgirl': 'person',
+                
+                # Personal attacks
+                'idiot': 'person', 'stupid': 'incorrect', 'moron': 'individual',
+                'dumb': 'mistaken', 'fool': 'someone', 'jerk': 'person',
+                'asshole': 'individual', 'retard': 'person', 'cunt': 'person',
+                'imbecile': 'person', 'dunce': 'person', 'nincompoop': 'person',
+                'blockhead': 'person', 'bonehead': 'person', 'dullard': 'person',
+                'simpleton': 'person', 'halfwit': 'person', 'dimwit': 'person',
+                'nitwit': 'person', 'numbskull': 'person', 'dumbass': 'person',
+                'dumbfuck': 'person', 'dumbhead': 'person', 'dumbnut': 'person',
+                'dumbshit': 'person', 'dumbstruck': 'person', 'dumbwaiter': 'person',
+                'dumbfound': 'person', 'dumbfounder': 'person', 'dumbfoundest': 'person',
+                
+                # Strong negative emotions
+                'hate': 'dislike', 'loathe': 'disapprove', 'despise': 'disagree',
+                'abhor': 'disapprove', 'detest': 'dislike', 'abominate': 'dislike',
+                'execrate': 'dislike', 'revile': 'dislike', 'vilify': 'dislike',
+                'denounce': 'disapprove', 'condemn': 'disapprove', 'censure': 'disapprove',
+                'reproach': 'disapprove', 'rebuke': 'disapprove', 'reprimand': 'disapprove',
+                'reprove': 'disapprove', 'upbraid': 'disapprove', 'berate': 'disapprove',
+                'castigate': 'disapprove', 'chastise': 'disapprove', 'scold': 'disapprove',
+                
+                # Aggressive terms
+                'kill': 'stop', 'destroy': 'change', 'ruin': 'affect',
+                'murder': 'stop', 'attack': 'address', 'assault': 'confront',
+                'annihilate': 'stop', 'eliminate': 'remove', 'eradicate': 'remove',
+                'exterminate': 'remove', 'extinguish': 'stop', 'obliterate': 'remove',
+                'slay': 'stop', 'slaughter': 'stop', 'massacre': 'stop',
+                'butcher': 'stop', 'execute': 'stop', 'dispatch': 'stop',
+                
+                # Insults and slurs
+                'nigger': 'person', 'nigga': 'person', 'fag': 'person',
+                'faggot': 'person', 'whore': 'person', 'slut': 'person',
+                'spic': 'person', 'kike': 'person', 'chink': 'person',
+                'gook': 'person', 'wetback': 'person', 'beaner': 'person',
+                'towelhead': 'person', 'sandnigger': 'person', 'cameljockey': 'person',
+                'raghead': 'person', 'taco': 'person', 'cholo': 'person',
+                'spook': 'person', 'coon': 'person', 'jigaboo': 'person',
+                'junglebunny': 'person', 'porchmonkey': 'person', 'spearchucker': 'person',
+                'zipperhead': 'person', 'gook': 'person', 'slant': 'person',
+                'yellow': 'person', 'chink': 'person', 'gook': 'person',
+                
+                # General negative terms
+                'terrible': 'different', 'awful': 'unusual', 'horrible': 'unexpected',
+                'disgusting': 'unpleasant', 'vile': 'unpleasant', 'nasty': 'unpleasant',
+                'revolting': 'unpleasant', 'repulsive': 'unpleasant', 'repugnant': 'unpleasant',
+                'abhorrent': 'unpleasant', 'detestable': 'unpleasant', 'loathsome': 'unpleasant',
+                'odious': 'unpleasant', 'offensive': 'unpleasant', 'obnoxious': 'unpleasant',
+                'noxious': 'unpleasant', 'putrid': 'unpleasant', 'rancid': 'unpleasant',
+                'rotten': 'unpleasant', 'stinking': 'unpleasant', 'tainted': 'unpleasant'
+            }
             
-            for i, (word, pos) in enumerate(pos_tags):
+            # Tokenize the text while preserving punctuation
+            words = text.split()
+            result = []
+            changes = []
+            
+            for word in words:
+                # Convert to lowercase for comparison but preserve original case
                 word_lower = word.lower()
                 
                 # Check if word is in semantic mappings
-                if word_lower in self.semantic_mappings:
-                    # Get the category of the original word
-                    original_category = self.get_word_category(word_lower)
-                    
-                    # Get the replacement word
-                    replacement = self.semantic_mappings[word_lower]
-                    
-                    # Ensure replacement matches the original word's category
-                    if original_category and original_category in self.word_categories:
-                        # Get all possible replacements for this category
-                        category_replacements = self.word_categories[original_category]
-                        if category_replacements:
-                            # Choose a replacement from the same category
-                            replacement = np.random.choice(category_replacements)
-                    
+                if word_lower in semantic_mappings:
+                    replacement = semantic_mappings[word_lower]
                     # Preserve original capitalization
                     if word[0].isupper():
                         replacement = replacement.capitalize()
-                    
                     result.append(replacement)
-                    continue
-                
-                # If word is in toxic patterns but not in semantic mappings
-                if word_lower in self.toxic_patterns:
-                    # Get the category of the original word
-                    original_category = self.get_word_category(word_lower)
-                    
-                    # Try to find a non-toxic replacement from the same category
-                    if original_category and original_category in self.word_categories:
-                        replacements = self.word_categories[original_category]
-                        if replacements:
-                            replacement = np.random.choice(replacements)
-                            if word[0].isupper():
-                                replacement = replacement.capitalize()
-                            result.append(replacement)
-                            continue
-                
-                # If no replacement found, keep original word
-                result.append(word)
+                    changes.append(f"{word} -> {replacement}")
+                else:
+                    result.append(word)
             
             # Join words back into text
             counterfactual = ' '.join(result)
@@ -290,10 +345,17 @@ class ToxicClassifier:
             counterfactual = re.sub(r'\s+([.,!?])', r'\1', counterfactual)  # Fix spacing around punctuation
             counterfactual = re.sub(r'\s+', ' ', counterfactual)  # Fix multiple spaces
             
-            return counterfactual
+            return {
+                'text': counterfactual,
+                'changes': changes
+            }
+            
         except Exception as e:
             print(f"Error in counterfactual generation: {str(e)}")
-            return text
+            return {
+                'text': text,
+                'changes': []
+            }
 
     def train(self, train_texts, train_labels, val_texts=None, val_labels=None,
               batch_size=16, epochs=3, learning_rate=2e-5, patience=3):
@@ -433,23 +495,34 @@ class ToxicClassifier:
     def explain_prediction(self, text):
         """Generate explanations using LIME"""
         try:
+            # Validate input
+            if not text or not isinstance(text, str) or len(text.strip()) < 3:
+                return None
+            
             # Get base prediction
             toxicity_level, probabilities = self.classify_toxicity(text)
             
-            # Generate LIME explanation
+            # Generate LIME explanation with reduced perturbations
             def predict_proba(texts):
                 results = []
-                for text in texts:
-                    _, probs = self.classify_toxicity(text)
+                for t in texts:
+                    if not t or len(t.strip()) < 3:  # Skip empty or too short texts
+                        results.append([0.33, 0.33, 0.33])
+                        continue
+                    _, probs = self.classify_toxicity(t)
                     results.append(probs)
                 return np.array(results)
             
             lime_exp = self.lime_explainer.explain_instance(
                 text,
                 predict_proba,
-                num_features=10,
-                top_labels=1
+                num_features=5,  # Reduced from 10 to 5
+                num_samples=100  # Reduced number of perturbations
             )
+            
+            # Convert numpy arrays to lists for JSON serialization
+            probabilities = [float(p) for p in probabilities]  # Convert numpy float32 to Python float
+            local_pred = [float(p) for p in lime_exp.local_pred]  # Convert numpy array to list
             
             # Format explanations
             explanations = {
@@ -457,8 +530,7 @@ class ToxicClassifier:
                 'probabilities': probabilities,
                 'lime_explanation': {
                     'important_features': lime_exp.as_list(),
-                    'local_prediction': lime_exp.local_pred,
-                    'explanation_text': lime_exp.as_html()
+                    'local_prediction': local_pred
                 }
             }
             
@@ -519,12 +591,12 @@ class ToxicClassifier:
             
             # Get explanations for both original and counterfactual
             original_exp = self.explain_prediction(text)
-            counterfactual_exp = self.explain_prediction(counterfactual)
+            counterfactual_exp = self.explain_prediction(counterfactual['text'])
             
             # Compare changes
             changes = []
             original_words = word_tokenize(text.lower())
-            counterfactual_words = word_tokenize(counterfactual.lower())
+            counterfactual_words = word_tokenize(counterfactual['text'].lower())
             
             for orig_word, cf_word in zip(original_words, counterfactual_words):
                 if orig_word != cf_word:
@@ -536,7 +608,7 @@ class ToxicClassifier:
             
             return {
                 'original_text': text,
-                'counterfactual': counterfactual,
+                'counterfactual': counterfactual['text'],
                 'changes': changes,
                 'original_explanation': original_exp,
                 'counterfactual_explanation': counterfactual_exp
@@ -544,4 +616,34 @@ class ToxicClassifier:
             
         except Exception as e:
             print(f"Error in counterfactual explanation: {str(e)}")
-            return None 
+            return None
+
+    def analyze_text(self, text):
+        """Analyze text and generate counterfactual if toxic"""
+        try:
+            # Classify toxicity
+            toxicity_level, probabilities = self.classify_toxicity(text)
+            
+            # Generate counterfactual if toxic
+            counterfactual_result = None
+            if toxicity_level in ['moderate', 'high']:
+                counterfactual_result = self.generate_counterfactual(text)
+            
+            # Prepare response
+            result = {
+                'text': text,
+                'toxicity_analysis': {
+                    'level': toxicity_level,
+                    'probabilities': probabilities
+                },
+                'counterfactual': counterfactual_result,
+                'counterfact': counterfactual_result['text'] if counterfactual_result else None
+            }
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error in text analysis: {str(e)}")
+            return {
+                'error': str(e)
+            } 
